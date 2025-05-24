@@ -1,0 +1,151 @@
+# mnemonic-otp
+
+A tiny, dependency-free TypeScript library for generating human-memorable patterned One-Time Passwords (OTPs).
+
+## Features
+
+- **Cryptographically Secure**: Uses Node.js `crypto.randomInt()` as required by NIST SP 800-90A/90B
+- **Human-Memorable**: Generates codes with memorable patterns like `1B001B`, `AAA999`, `A1B2A1`
+- **Configurable Length**: Support for templates of any length (4, 6, 8+ characters)
+- **NIST Compliant**: ≥20-bit effective entropy out-of-the-box (SP 800-63B compliant)
+- **Pluggable Templates**: Use built-in patterns or create your own
+- **Zero Dependencies**: Lightweight with no external dependencies
+- **TypeScript**: Full TypeScript support with comprehensive types
+
+## Quick Start
+
+```typescript
+import { generate } from './index';
+
+// Generate a code with default settings
+const { code } = generate();
+console.log(code); // e.g. "1B001B"
+
+// Generate with specific options
+const result = generate({
+  alphabet: "0123456789ABCDEF", // Hex alphabet
+  templates: [pattern("ABCDAB")]  // Custom template
+});
+console.log(result.code);        // e.g. "1A2B1A"
+console.log(result.template);    // "ABCDAB"
+console.log(result.entropyBits); // 20
+```
+
+## Installation
+
+Using Bun:
+```bash
+bun install
+```
+
+Using npm:
+```bash
+npm install
+```
+
+## API Reference
+
+### `generate(options?): GeneratedCode`
+
+Generates a mnemonic OTP with the specified options.
+
+**Parameters:**
+- `options.alphabet` (string, optional): Character set to use. Default: Crockford Base-32 (`"0123456789ABCDEFGHJKMNPQRSTUVWXYZ"`)
+- `options.templates` (Template[], optional): Array of templates to choose from. Default: 5 built-in templates
+
+**Returns:**
+- `code`: The generated OTP string
+- `template`: Name of the template used
+- `entropyBits`: Estimated minimum entropy in bits
+
+### `pattern(str: string): Template`
+
+Creates a template from a pattern string using A-Z placeholders.
+
+```typescript
+const template = pattern("ABCABC"); // Mirror repeat: A1B2A1B2
+const template = pattern("AAABBB"); // Triplets: 111AAA
+const template = pattern("ABCCBA"); // Palindrome: A1B2B2A1
+```
+
+### `validateCode(code: string, options?): boolean`
+
+Validates that a code conforms syntactically to the given templates and alphabet.
+
+```typescript
+const isValid = validateCode("1A001A"); // true (matches ABCCBA pattern)
+const isValid = validateCode("1A2B3C"); // false (no matching pattern)
+```
+
+### `calcPoolEntropyBits(templates: Template[], alphabetLength: number): number`
+
+Calculates the minimum entropy bits across all templates in the pool.
+
+## Built-in Templates
+
+The library includes 5 default templates, all 6 characters long:
+
+| Pattern | Description | Example |
+|---------|-------------|---------|
+| `ABCABC` | Mirror repeat | `1A01A0` |
+| `AAABBB` | Triplet + triplet | `111AAA` |
+| `ABABAB` | Alternating | `1A1A1A` |
+| `ABCDAB` | First 4 + repeat first 2 | `1A2B1A` |
+| `ABCCBA` | Perfect palindrome | `1A22A1` |
+
+## Custom Templates
+
+Create your own patterns for any length:
+
+```typescript
+import { generate, pattern } from './index';
+
+// 4-character patterns
+const shortTemplates = [
+  pattern("ABAB"), // A1B2A1B2 → 1A1A
+  pattern("AABB"), // A1A1B2B2 → 11AA
+];
+
+// 8-character patterns  
+const longTemplates = [
+  pattern("ABCDDCBA"), // Palindrome: 1A2B332B2A1
+  pattern("ABCDABCD"), // Double repeat: 1A2B3C1A2B3C
+];
+
+const { code } = generate({ templates: shortTemplates });
+```
+
+## Security Considerations
+
+- **Entropy**: Default configuration provides ≥20 bits of entropy, meeting NIST SP 800-63B requirements for low-risk applications
+- **Randomness**: Uses cryptographically secure `crypto.randomInt()` 
+- **Alphabet**: Default alphabet excludes visually similar characters (O/I/L) following NIST IR 7966 recommendations
+- **Validation**: Always validate codes before accepting them in production systems
+
+## Use Cases
+
+- **Two-Factor Authentication**: Human-readable backup codes
+- **Password Reset**: Memorable temporary passwords  
+- **Account Verification**: Email/SMS verification codes
+- **Gaming**: Lobby codes, room IDs
+- **Support**: Ticket reference numbers
+
+## Development
+
+Run the library:
+```bash
+bun run index.ts
+```
+
+Build (if needed):
+```bash
+bun build index.ts
+```
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Author
+
+Created by Munchy
