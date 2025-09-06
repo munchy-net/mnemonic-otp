@@ -1,10 +1,10 @@
 # mnemonic-otp
 
-A tiny, dependency-free TypeScript library for generating human-memorable patterned One-Time Passwords (OTPs).
+A tiny, dependency‑free TypeScript library for generating human‑memorable patterned One‑Time Passwords (OTPs).
 
 ## Features
 
-- **Cryptographically Secure**: Uses Node.js `crypto.randomInt()` as required by NIST SP 800-90A/90B
+- **Cryptographically Secure**: Uses Node.js `crypto.randomInt()` as required by NIST SP 800‑90A/90B (or pluggable RNG)
 - **Human-Memorable**: Generates codes with memorable patterns like `1B001B`, `AAA999`, `A1B2A1`
 - **Configurable Length**: Support for templates of any length (4, 6, 8+ characters)
 - **NIST Compliant**: ≥20-bit effective entropy out-of-the-box (SP 800-63B compliant)
@@ -15,7 +15,7 @@ A tiny, dependency-free TypeScript library for generating human-memorable patter
 ## Quick Start
 
 ```typescript
-import { generate } from './index';
+import { generate, pattern } from './index.ts';
 
 // Generate a code with default settings
 const { code } = generate();
@@ -50,8 +50,9 @@ npm install
 Generates a mnemonic OTP with the specified options.
 
 **Parameters:**
-- `options.alphabet` (string, optional): Character set to use. Default: Crockford Base-32 (`"0123456789ABCDEFGHJKMNPQRSTUVWXYZ"`)
-- `options.templates` (Template[], optional): Array of templates to choose from. Default: 5 built-in templates
+- `options.alphabet` (string, optional): Character set to use. Default: Crockford Base‑32 (`"0123456789ABCDEFGHJKMNPQRSTUVWXYZ"`). Alphabet must contain unique symbols.
+- `options.templates` (Template[], optional): Array of templates to choose from. Default: 5 built‑in templates.
+- `options.rng` ((max: number) => number, optional): Cryptographically secure RNG returning an integer in `[0, max)`. Defaults to Node’s `crypto.randomInt`. For browsers, provide an RNG backed by WebCrypto.
 
 **Returns:**
 - `code`: The generated OTP string
@@ -63,9 +64,9 @@ Generates a mnemonic OTP with the specified options.
 Creates a template from a pattern string using A-Z placeholders.
 
 ```typescript
-const template = pattern("ABCABC"); // Mirror repeat: A1B2A1B2
-const template = pattern("AAABBB"); // Triplets: 111AAA
-const template = pattern("ABCCBA"); // Palindrome: A1B2B2A1
+const t1 = pattern("ABCABC"); // Mirror repeat, 3 unique symbols
+const t2 = pattern("AAABBB"); // Triplet + triplet, 2 unique symbols
+const t3 = pattern("ABCCBA"); // Palindrome, 3 unique symbols
 ```
 
 ### `validateCode(code: string, options?): boolean`
@@ -80,6 +81,8 @@ const isValid = validateCode("1A2B3C"); // false (no matching pattern)
 ### `calcPoolEntropyBits(templates: Template[], alphabetLength: number): number`
 
 Calculates the minimum entropy bits across all templates in the pool.
+
+Internally uses a numerically stable computation in log‑space (no BigInt overflow), so it remains accurate even with large alphabets and template pools.
 
 ## Built-in Templates
 
@@ -98,7 +101,7 @@ The library includes 5 default templates, all 6 characters long:
 Create your own patterns for any length:
 
 ```typescript
-import { generate, pattern } from './index';
+import { generate, pattern } from './index.ts';
 
 // 4-character patterns
 const shortTemplates = [
@@ -108,8 +111,8 @@ const shortTemplates = [
 
 // 8-character patterns  
 const longTemplates = [
-  pattern("ABCDDCBA"), // Palindrome: 1A2B332B2A1
-  pattern("ABCDABCD"), // Double repeat: 1A2B3C1A2B3C
+  pattern("ABCDDCBA"), // Palindrome
+  pattern("ABCDABCD"), // Double repeat
 ];
 
 const { code } = generate({ templates: shortTemplates });
@@ -117,10 +120,32 @@ const { code } = generate({ templates: shortTemplates });
 
 ## Security Considerations
 
-- **Entropy**: Default configuration provides ≥20 bits of entropy, meeting NIST SP 800-63B requirements for low-risk applications
-- **Randomness**: Uses cryptographically secure `crypto.randomInt()` 
-- **Alphabet**: Default alphabet excludes visually similar characters (O/I/L) following NIST IR 7966 recommendations
-- **Validation**: Always validate codes before accepting them in production systems
+- Entropy: Default template pool with the default alphabet yields ≥20 bits of effective entropy (SP 800‑63B guidance for low‑risk OTPs). Increase templates or alphabet size for higher entropy.
+- Randomness: Uses cryptographically secure randomness. In Node, the default RNG is `crypto.randomInt`. In browsers, supply a WebCrypto‑backed RNG via `options.rng`.
+- Alphabet: Ensure the alphabet contains unique symbols. The default alphabet follows NIST IR 7966 (Crockford Base‑32 without O/I/L).
+- Validation: Always validate codes server‑side using `validateCode` with the same template pool and alphabet used to generate them.
+- Side‑channels: `validateCode` is not constant‑time; do not rely on timing behavior for security. Rate‑limit and throttle verification attempts as usual.
+- Resource limits: Extremely large templates or pools can be computationally expensive. Bound input sizes in untrusted contexts.
+
+Browser RNG example using WebCrypto:
+
+```ts
+function webCryptoRng(max: number): number {
+  if (!crypto || !crypto.getRandomValues) throw new Error('WebCrypto unavailable');
+  if (!Number.isInteger(max) || max <= 0) throw new Error('max must be > 0');
+  // Rejection sampling for unbiased range [0, max)
+  const maxUint = 0xffffffff;
+  const limit = Math.floor(maxUint / max) * max;
+  const buf = new Uint32Array(1);
+  while (true) {
+    crypto.getRandomValues(buf);
+    const x = buf[0]!;
+    if (x < limit) return x % max;
+  }
+}
+
+const { code } = generate({ rng: webCryptoRng });
+```
 
 ## Use Cases
 
