@@ -17,11 +17,11 @@ A tiny, dependency‑free TypeScript library for generating human‑memorable pa
 ```typescript
 import { generate, pattern } from './index.ts';
 
-// Generate a code with default settings
+// Simplest usage
 const { code } = generate();
 console.log(code); // e.g. "1B001B"
 
-// Generate with specific options
+// With specific options
 const result = generate({
   alphabet: "0123456789ABCDEF", // Hex alphabet
   templates: [pattern("ABCDAB")]  // Custom template
@@ -54,10 +54,19 @@ Generates a mnemonic OTP with the specified options.
 - `options.templates` (Template[], optional): Array of templates to choose from. Default: 5 built‑in templates.
 - `options.rng` ((max: number) => number, optional): Cryptographically secure RNG returning an integer in `[0, max)`. Defaults to Node’s `crypto.randomInt`. For browsers, provide an RNG backed by WebCrypto.
 
+Additional HMAC options (optional):
+- `options.secret` (string | Buffer): When supplied, an HMAC is returned that binds the generated `code` to any `options.meta` you pass.
+- `options.meta` (any, optional): Arbitrary metadata (e.g. `{ nonce, email, userId }`) included in the HMAC payload.
+- `options.hmacAlgorithm` ("sha256" | "sha512", optional): Default `"sha256"`.
+- `options.hmacEncoding` ("hex" | "base64" | "base64url", optional): Default `"hex"`.
+
+The HMAC is computed over canonical JSON of `{ code, ...meta }` (objects are key‑sorted; `undefined` keys omitted).
+
 **Returns:**
 - `code`: The generated OTP string
 - `template`: Name of the template used
 - `entropyBits`: Estimated minimum entropy in bits
+ - `hmac` (when `secret` is provided): HMAC string suitable for storing in a database instead of the plaintext code
 
 ### `pattern(str: string): Template`
 
@@ -73,9 +82,26 @@ const t3 = pattern("ABCCBA"); // Palindrome, 3 unique symbols
 
 Validates that a code conforms syntactically to the given templates and alphabet.
 
+If you also pass `options.secret` and `options.hmac`, the function additionally verifies the integrity of `{ code, ...options.meta }` using a constant‑time comparison with the provided HMAC. This lets you store only the HMAC server‑side and never the plaintext OTP.
+
 ```typescript
-const isValid = validateCode("1A001A"); // true (matches ABCCBA pattern)
-const isValid = validateCode("1A2B3C"); // false (no matching pattern)
+const isValidSyntaxOnly = validateCode("1A001A"); // true (matches ABCCBA pattern)
+const isValidSyntaxOnly2 = validateCode("1A2B3C"); // false (no matching pattern)
+
+// Generate, bind to metadata (e.g. nonce + email), and store only HMAC
+const { code, hmac } = generate({
+  secret: process.env.OTP_SECRET!,
+  meta: { nonce: "91fdc3", email: "user@example.com" },
+});
+// Store: { hmac, meta, createdAt, ... }
+
+// Later, verify: caller provides `code` and you look up stored `hmac`+`meta`
+const ok = validateCode(code, {
+  secret: process.env.OTP_SECRET!,
+  hmac, // the value previously stored in DB
+  meta: { nonce: "91fdc3", email: "user@example.com" },
+});
+// ok === true only if both syntax and HMAC match
 ```
 
 ### `calcPoolEntropyBits(templates: Template[], alphabetLength: number): number`
@@ -124,6 +150,7 @@ const { code } = generate({ templates: shortTemplates });
 - Randomness: Uses cryptographically secure randomness. In Node, the default RNG is `crypto.randomInt`. In browsers, supply a WebCrypto‑backed RNG via `options.rng`.
 - Alphabet: Ensure the alphabet contains unique symbols. The default alphabet follows NIST IR 7966 (Crockford Base‑32 without O/I/L).
 - Validation: Always validate codes server‑side using `validateCode` with the same template pool and alphabet used to generate them.
+- HMAC binding: Prefer storing only the HMAC of `{ code, ...meta }` using a server‑side secret. Include a per‑attempt `nonce` or contextual fields (like email, userId) in `meta` so codes cannot be replayed across contexts.
 - Side‑channels: `validateCode` is not constant‑time; do not rely on timing behavior for security. Rate‑limit and throttle verification attempts as usual.
 - Resource limits: Extremely large templates or pools can be computationally expensive. Bound input sizes in untrusted contexts.
 
